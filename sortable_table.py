@@ -108,6 +108,7 @@ class SortableTable:
         self._load_persisted_data()
 
     def _build_ui(self):
+        """UI 전체 구성 (툴바, 테이블, 필터, 상태바) / Build the entire UI layout"""
         # === 툴바 1줄: 메인 기능 ===
         toolbar_top = tk.Frame(self.root, bg='#16213e', pady=6, padx=10)
         toolbar_top.pack(fill='x')
@@ -242,6 +243,7 @@ class SortableTable:
     # ──────────────────────────────────────────────
 
     def _setup_fixed_columns(self):
+        """고정 컬럼 헤더 및 너비 초기 설정 / Initialize fixed column headings and widths"""
         self.tree.configure(columns=self.columns)
         for col in self.columns:
             self.tree.heading(col, text=f"{col} {NEUTRAL}")
@@ -254,6 +256,7 @@ class SortableTable:
             self.tree.column(col, width=width, minwidth=60, anchor='center')
 
     def _set_data(self, data):
+        """데이터 일괄 설정 및 테이블 갱신 / Set all row data and refresh the table"""
         self.data = [list(row) for row in data]
         self.original_data = [list(row) for row in data]
         self._refresh_table()
@@ -279,8 +282,9 @@ class SortableTable:
             return
         col_name = self.columns[col_idx]
 
-        if event.state & 0x4:  # Ctrl 키
-            # Ctrl+클릭: 필터 모드 전환
+        # Ctrl 키 비트마스크: 0x4 (Ctrl이 눌린 상태인지 확인)
+        if event.state & 0x4:
+            # Ctrl+클릭: 필터 모드 순환 전환
             if col_name in self.filterable_cols:
                 current = self.filter_modes.get(col_name, '=')
                 idx = self.FILTER_CYCLE.index(current) if current in self.FILTER_CYCLE else 0
@@ -291,7 +295,8 @@ class SortableTable:
             self._on_header_click(col_name)
 
     def _on_header_click(self, column):
-        """헤더 클릭: ASC→DESC→제거, 새 열은 sort_order에 추가"""
+        """헤더 클릭: ASC->DESC->제거, 새 열은 sort_order에 추가"""
+        # 이미 정렬 중인 열인지 확인
         existing_idx = None
         existing_dir = None
         for i, (col, direction) in enumerate(self.sort_order):
@@ -301,19 +306,22 @@ class SortableTable:
                 break
 
         if existing_idx is not None:
+            # 정순이면 역순으로 전환, 역순이면 정렬에서 제거 (3단계 순환)
             if existing_dir == ASC:
                 self.sort_order[existing_idx] = (column, DESC)
             else:
                 self.sort_order.pop(existing_idx)
         else:
+            # 새로운 열: 정순으로 추가 (다중 정렬)
             self.sort_order.append((column, ASC))
 
         self._update_header_labels()
         self._apply_sort()
 
     def _update_header_labels(self):
+        """모든 컬럼 헤더에 정렬 화살표와 필터 모드 표시 갱신 / Refresh heading arrows and filter indicators"""
         for col in self.columns:
-            # 정렬 화살표
+            # 정렬 화살표 결정
             arrow = NEUTRAL
             for sort_col, direction in self.sort_order:
                 if sort_col == col:
@@ -325,12 +333,14 @@ class SortableTable:
             self.tree.heading(col, text=f"{col} {arrow}{filter_txt}")
 
     def _apply_sort(self):
+        """현재 sort_order 기준으로 다중 컬럼 정렬 실행 / Apply multi-column sort based on sort_order"""
         if not self.sort_order:
+            # 정렬 조건이 없으면 원본 순서로 복원
             self.data = [list(row) for row in self.original_data]
             self.sort_label.configure(text="정렬: 없음")
         else:
             self.data = [list(row) for row in self.original_data]
-            # stable sort: 역순 적용 (마지막=최저 우선순위 먼저)
+            # stable sort: 역순으로 적용하여 우선순위 보장 (마지막 키부터 정렬)
             for col, direction in reversed(self.sort_order):
                 col_idx = COL_IDX[col]
                 s_type = self.sort_types[col]
@@ -341,6 +351,7 @@ class SortableTable:
                     ),
                     reverse=reverse
                 )
+            # 상태 라벨에 현재 정렬 순서 표시 (예: "정렬: 카페닉네임↓, 게시글수↑")
             parts = []
             for col, direction in self.sort_order:
                 arrow = "↓" if direction == ASC else "↑"
@@ -349,6 +360,7 @@ class SortableTable:
         self._refresh_table()
 
     def _reset_sort(self):
+        """모든 정렬 조건 초기화 및 원본 순서 복원 / Clear all sort orders and restore original row order"""
         self.sort_order = []
         self._update_header_labels()
         self.data = [list(row) for row in self.original_data]
@@ -409,16 +421,19 @@ class SortableTable:
         return all(results) if results else True
 
     def _refresh_table(self):
+        """Treeview 전체 행 다시 그리기 (필터 적용 포함) / Redraw all Treeview rows with filters applied"""
+        # 기존 행 모두 삭제
         for item in self.tree.get_children():
             self.tree.delete(item)
         visible_count = 0
         for i, row in enumerate(self.data):
-            # 필터 적용
+            # 필터 조건에 맞지 않는 행은 건너뛰기
             if not self._passes_filter(row):
                 continue
             visible_count += 1
             nid = row[COL_IDX['네이버ID']] if len(row) > 0 else ''
             flags = self.row_flags.get(nid, {})
+            # 행 상태에 따라 태그 결정 (신규/갱신/짝수줄/홀수줄)
             if flags.get('new'):
                 tag = 'new_row'
             elif flags.get('updated'):
@@ -428,13 +443,16 @@ class SortableTable:
             else:
                 tag = 'odd'
             self.tree.insert('', 'end', values=row, tags=(tag,))
+        # 태그별 배경색 설정
         self.tree.tag_configure('even', background='#16213e')
         self.tree.tag_configure('odd', background='#1a1a3e')
         self.tree.tag_configure('new_row', background='#4a3f00')
         self.tree.tag_configure('updated_row', background='#1a3a2e')
 
     def _update_count(self):
+        """하단 상태바의 회원 수 표시 갱신 / Update the member count label in the status bar"""
         total = len(self.data)
+        # 필터가 활성화된 경우 보이는 행 수 / 전체 수 형태로 표시
         visible = sum(1 for row in self.data if self._passes_filter(row))
         if visible < total and self.filter_modes:
             self.count_label.configure(text=f"{visible}/{total}명")
@@ -519,7 +537,8 @@ class SortableTable:
             self.status_label.configure(text="필터 해제됨")
 
     def _update_filter_buttons(self):
-        """필터 버튼 텍스트 + 색상 업데이트"""
+        """필터 버튼 텍스트 + 색상 업데이트 / Sync filter button labels and colors with current modes"""
+        # 모드별 배경색/전경색 매핑
         colors = {
             '=': ('#1b2838', '#a8a8a8'),
             '∩': ('#1a5276', '#ffffff'),
@@ -529,6 +548,7 @@ class SortableTable:
         }
         for col, btn in self.filter_buttons.items():
             mode = self.filter_modes.get(col, '=')
+            # 열 이름이 길면 앞 4글자만 표시
             short = col[:4] if len(col) > 6 else col
             btn.configure(text=f"{short}{mode}")
             bg, fg = colors.get(mode, ('#1b2838', '#a8a8a8'))
@@ -643,11 +663,11 @@ class SortableTable:
             current_values[col_idx] = new_value
             self.tree.item(item, values=current_values)
 
-            # original_data에서도 해당 행 찾아서 업데이트
+            # original_data에서도 해당 행 찾아서 업데이트 (정렬과 무관하게 원본 동기화)
             tree_idx = self.tree.index(item)
             if tree_idx < len(self.data):
                 self.data[tree_idx] = list(current_values)
-                # data→original_data 동기화 (정렬 상태와 무관하게)
+                # 원본 데이터에서 변경 전 값 기준으로 일치하는 행을 찾아 새 값 반영
                 old_row = self.data[tree_idx]
                 for i, row in enumerate(self.original_data):
                     old_vals = [str(v) for v in row]
@@ -692,6 +712,7 @@ class SortableTable:
         return default
 
     def _save_board_config(self, config):
+        """게시판 설정을 board_config.json에 저장 / Save board config to board_config.json"""
         config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'board_config.json')
         with open(config_path, 'w', encoding='utf-8') as f:
             json.dump(config, f, ensure_ascii=False, indent=2)
@@ -760,8 +781,10 @@ class SortableTable:
         self.root.update()
         output_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cafe_members.json')
 
+        # 별도 스레드에서 스크래핑 실행 (UI 블로킹 방지)
         def run():
             def on_status(msg):
+                # 메인 스레드에서 상태 라벨 업데이트
                 self.root.after(0, lambda: self.status_label.configure(text=msg))
             scraper = CafeScraper(config['cafe_name'], on_status=on_status)
             members = scraper.run_full(output_path, mode='members', board_config=config)
@@ -809,7 +832,9 @@ class SortableTable:
             return
 
         # 집계 전 출석체크/수강생후기/보충강의/라이브후기 값 초기화
+        # 새로운 집계 결과로 덮어쓰기 위해 기존 집계 관련 컬럼을 0으로 리셋
         for row in self.original_data:
+            # 행 길이가 고정 컬럼 수보다 짧으면 타입에 맞는 기본값으로 채움
             while len(row) < len(FIXED_COLUMNS):
                 col_name = FIXED_COLUMNS[len(row)]
                 st = FIXED_SORT_TYPES.get(col_name)
@@ -831,6 +856,7 @@ class SortableTable:
         self.root.update()
         output_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cafe_members.json')
 
+        # 별도 스레드에서 게시판 집계 스크래핑 실행
         def run():
             def on_status(msg):
                 self.root.after(0, lambda: self.status_label.configure(text=msg))
@@ -997,28 +1023,29 @@ class SortableTable:
         if num_cols < 2:
             return None
 
-        # 각 열의 샘플 분석 (최대 30행)
+        # 각 열의 샘플 분석 (최대 30행, 빈 행 제외)
         sample_rows = [r for r in raw_rows[:30] if any(c.strip() for c in r)]
         headers = [f'col_{i}' for i in range(num_cols)]
-        assigned = set()
+        assigned = set()  # 이미 할당된 열 이름 추적 (중복 방지)
 
         for col_idx in range(num_cols):
+            # 해당 열의 비어있지 않은 값만 추출
             values = [r[col_idx].strip() for r in sample_rows if col_idx < len(r) and r[col_idx].strip()]
             if not values:
                 continue
 
-            # 전화번호 패턴 (010-xxxx-xxxx) → 건너뛰기
+            # 전화번호 패턴 (010-xxxx-xxxx) → 유의미하지 않으므로 건너뛰기
             phone_count = sum(1 for v in values if re.match(r'^01\d[\-\s]?\d{3,4}[\-\s]?\d{4}$', v))
             if phone_count / len(values) > 0.5:
                 headers[col_idx] = '전화번호'
                 continue
 
-            # 순수 숫자 (번호) → 건너뛰기
+            # 순수 숫자 열 (일련번호 등) → 건너뛰기
             if all(v.isdigit() for v in values):
                 headers[col_idx] = '번호'
                 continue
 
-            # 한글만, 평균 2~4글자 = 본명
+            # 한글만으로 구성, 평균 2~4글자 → 본명으로 추론
             korean_only = [v for v in values if re.match(r'^[가-힣]+$', v)]
             if korean_only and '본명' not in assigned:
                 avg_len = sum(len(v) for v in korean_only) / len(korean_only)
@@ -1027,14 +1054,14 @@ class SortableTable:
                     assigned.add('본명')
                     continue
 
-            # 영소문자+숫자 조합 = ID (or "id(닉네임)" 혼합)
+            # 영문+숫자 조합 → 네이버ID로 추론
             id_like = [v for v in values if re.match(r'^[a-zA-Z0-9_.\-@]+$', v)]
             if id_like and len(id_like) / len(values) > 0.3 and '네이버ID' not in assigned:
                 headers[col_idx] = '네이버ID'
                 assigned.add('네이버ID')
                 continue
 
-            # 한글 포함 + 평균 4글자+ 또는 "id(닉네임)" 형식 = 카페닉네임
+            # 한글 포함 + 평균 길이 3자 이상 또는 괄호 형식 → 카페닉네임으로 추론
             has_korean = [v for v in values if re.search(r'[가-힣]', v)]
             has_paren = [v for v in values if re.search(r'[\(\（]', v)]
             if (has_korean or has_paren) and '카페닉네임' not in assigned:
@@ -1050,9 +1077,12 @@ class SortableTable:
         return None
 
     def _read_csv_rows(self, csv_path):
+        """CSV/XLSX 파일을 읽어 dict 리스트로 반환 / Read CSV or XLSX file and return list of row dicts"""
+        # 확장자에 따라 Excel 파일이면 별도 처리
         _, ext = os.path.splitext(csv_path)
         if ext.lower() in ('.xlsx', '.xls'):
             return self._read_xlsx_rows(csv_path)
+        # 인코딩 자동 감지: utf-8-sig 실패 시 euc-kr로 재시도
         try:
             with open(csv_path, 'r', encoding='utf-8-sig') as f:
                 raw_rows = list(csv.reader(f))
@@ -1061,13 +1091,14 @@ class SortableTable:
                 raw_rows = list(csv.reader(f))
         if not raw_rows:
             return []
-        # col_config에서 키워드 수집
+        # col_config에서 헤더 행 식별용 키워드 수집
         header_keywords = set()
         for cfg_key in ('id_keywords', 'nick_keywords', 'name_keywords'):
             for kw in self.col_config.get(cfg_key, '').split(','):
                 kw = kw.strip()
                 if kw:
                     header_keywords.add(kw)
+        # 키워드가 포함된 행을 헤더 행으로 인식
         headers = None
         header_row_idx = -1
         for i, row in enumerate(raw_rows):
@@ -1077,21 +1108,25 @@ class SortableTable:
                 header_row_idx = i
                 break
         if not headers:
-            # 헤더 없는 CSV → 데이터 패턴으로 열 이름 자동 추론
+            # 헤더가 없는 CSV → 데이터 패턴으로 열 이름 자동 추론
             headers = self._infer_headers(raw_rows)
             if headers:
                 header_row_idx = -1  # 헤더 행이 없으므로 0번 행부터 데이터
             else:
+                # 추론 실패 시 DictReader 폴백
                 try:
                     with open(csv_path, 'r', encoding='utf-8-sig') as f:
                         return list(csv.DictReader(f))
                 except Exception:
                     return []
+        # 헤더 이후 행들을 dict로 변환
         result = []
         for i in range(header_row_idx + 1, len(raw_rows)):
             row = raw_rows[i]
+            # 빈 행 건너뛰기
             if not any(c.strip() for c in row):
                 continue
+            # 중간에 또 헤더 행이 나오면 건너뛰기 (반복 헤더 패턴 대응)
             stripped = [c.strip() for c in row]
             if any(s in header_keywords for s in stripped):
                 continue
@@ -1099,25 +1134,28 @@ class SortableTable:
             for j, val in enumerate(row):
                 if j < len(headers) and headers[j]:
                     row_dict[headers[j]] = val.strip()
+            # 키워드 열에 값이 하나라도 있는 행만 결과에 포함
             if any(row_dict.get(h, '') for h in headers if h in header_keywords):
                 result.append(row_dict)
         return result
 
     def _read_xlsx_rows(self, xlsx_path):
+        """Excel(.xlsx) 파일을 읽어 dict 리스트로 반환 / Read XLSX file and return list of row dicts"""
         try:
             import openpyxl
         except ImportError:
             messagebox.showerror("모듈 없음", "openpyxl이 필요합니다.")
             return []
         wb = openpyxl.load_workbook(xlsx_path, data_only=True)
-        ws = wb[wb.sheetnames[0]]
-        # col_config에서 키워드 수집
+        ws = wb[wb.sheetnames[0]]  # 첫 번째 시트만 사용
+        # col_config에서 헤더 식별용 키워드 수집
         header_keywords = set()
         for cfg_key in ('id_keywords', 'nick_keywords', 'name_keywords'):
             for kw in self.col_config.get(cfg_key, '').split(','):
                 kw = kw.strip()
                 if kw:
                     header_keywords.add(kw)
+        # 처음 50행 내에서 키워드가 포함된 헤더 행 탐색
         headers = None
         header_row = 0
         for row_idx in range(1, min(ws.max_row + 1, 50)):
@@ -1128,11 +1166,13 @@ class SortableTable:
                 break
         if not headers:
             return []
+        # 헤더 이후 행들을 dict로 변환
         result = []
         for row_idx in range(header_row + 1, ws.max_row + 1):
             row_vals = [str(c.value).strip() if c.value else '' for c in ws[row_idx]]
             if not any(row_vals):
                 continue
+            # 반복 헤더 행 건너뛰기
             if any(v in header_keywords for v in row_vals):
                 continue
             row_dict = {}
@@ -1425,6 +1465,7 @@ class SortableTable:
         self.status_label.configure(text=f"{title} 매칭: {filled}명 적용 (전체 {total}명 표시)")
 
     def _load_dongheng_csv(self):
+        """동행천만 CSV를 불러와 '소속'에 '기'가 포함된 회원에 별표 표시 / Load Donghengcheonman CSV and mark members"""
         path = filedialog.askopenfilename(
             title="동행천만 멤버 CSV 선택",
             filetypes=[("CSV/Excel 파일", "*.csv *.xlsx"), ("CSV 파일", "*.csv"),
@@ -1434,6 +1475,7 @@ class SortableTable:
         matches = self._match_csv_to_rows(path)
         filled = 0
         for idx, csv_row in matches.items():
+            # '소속' 열에서 '기'(기수) 포함 여부로 동행천만 멤버 판별
             sosok_val = ''
             for key in csv_row:
                 if '소속' in key.strip():
@@ -1450,9 +1492,11 @@ class SortableTable:
         self.status_label.configure(text=f"동행천만 매칭: {filled}명 ★ 표시 (전체 {total}명)")
 
     def _load_babsang_csv(self):
+        """밥상모임 CSV를 불러와 해당 회원에 표시 / Load Babsang CSV and mark matching members"""
         self._load_attribute_csv("밥상모임", '밥상모임', ['밥상모임', '밥상', '모임'])
 
     def _load_realname_csv(self):
+        """본명 매핑 CSV를 불러와 회원별 본명 입력 / Load real-name CSV and fill in the name column"""
         path = filedialog.askopenfilename(
             title="본명 매핑 CSV 선택",
             filetypes=[("CSV/Excel 파일", "*.csv *.xlsx"), ("CSV 파일", "*.csv"),
@@ -1462,7 +1506,7 @@ class SortableTable:
         matches = self._match_csv_to_rows(path)
         filled = 0
 
-        # 본명 열 찾기 (설정 키워드 사용)
+        # 본명 열 찾기 (설정 키워드 기반)
         csv_rows = self._read_csv_rows(path)
         name_col_key = None
         if csv_rows:
@@ -1481,7 +1525,7 @@ class SortableTable:
                         name_val = csv_row[key].strip()
                         break
             if name_val:
-                # 괄호와 괄호 안 내용 제거: "송호상(토)" → "송호상"
+                # 괄호와 괄호 안 내용 제거: "송호상(토)" -> "송호상" (부가 정보 제거)
                 name_val = re.sub(r'\s*[\(\（].*?[\)\）]\s*', '', name_val).strip()
                 self.original_data[idx][COL_IDX['본명']] = name_val
                 filled += 1
@@ -1495,6 +1539,7 @@ class SortableTable:
     # ──────────────────────────────────────────────
 
     def _add_row(self):
+        """회원 추가 다이얼로그를 표시하고 새 행 삽입 / Show add-member dialog and insert a new row"""
         dialog = tk.Toplevel(self.root)
         dialog.title("회원 추가")
         dialog.configure(bg='#1a1a2e')
@@ -1549,6 +1594,7 @@ class SortableTable:
             row=len(self.columns), column=0, columnspan=2, pady=10)
 
     def _delete_row(self):
+        """선택된 행(들)을 삭제 / Delete selected row(s) from the table"""
         selected = self.tree.selection()
         if not selected:
             messagebox.showwarning("선택 필요", "삭제할 행을 선택하세요.\n(Ctrl+클릭 또는 Shift+클릭으로 여러 행 선택 가능)")
@@ -1571,6 +1617,7 @@ class SortableTable:
         self.status_label.configure(text=f"{count}명 삭제됨")
 
     def _delete_all_rows(self):
+        """모든 행을 삭제 (확인 후 실행) / Delete all rows after user confirmation"""
         if not self.original_data:
             return
         count = len(self.original_data)
@@ -1590,13 +1637,14 @@ class SortableTable:
     # ──────────────────────────────────────────────
 
     def _save_csv(self):
+        """현재 테이블 데이터를 CSV 파일로 내보내기 / Export current table data to a CSV file"""
         path = filedialog.asksaveasfilename(
             title="CSV로 저장", defaultextension=".csv",
             filetypes=[("CSV 파일", "*.csv")])
         if not path:
             return
         try:
-            # 필터 적용: 보이는 행만 저장
+            # 필터가 적용된 경우 화면에 보이는 행만 저장
             visible_rows = [row for row in self.data if self._passes_filter(row)]
             with open(path, 'w', encoding='utf-8-sig', newline='') as f:
                 writer = csv.writer(f)
@@ -1612,6 +1660,7 @@ class SortableTable:
             messagebox.showerror("오류", f"저장할 수 없습니다:\n{e}")
 
     def _auto_save(self):
+        """원본 데이터를 member_data.json에 자동 저장 / Auto-save original data to member_data.json"""
         payload = {'saved_at': datetime.datetime.now().isoformat(), 'members': self.original_data}
         try:
             with open(self.data_file, 'w', encoding='utf-8') as f:
@@ -1620,12 +1669,14 @@ class SortableTable:
             pass
 
     def _load_persisted_data(self):
+        """앱 시작 시 member_data.json에서 저장된 데이터 복원 / Load previously saved data on app startup"""
         if os.path.exists(self.data_file):
             try:
                 with open(self.data_file, 'r', encoding='utf-8') as f:
                     payload = json.load(f)
                 data = payload.get('members', [])
                 if data:
+                    # 행 길이가 고정 컬럼 수보다 짧으면 타입별 기본값으로 채움
                     for row in data:
                         while len(row) < len(FIXED_COLUMNS):
                             col_name = FIXED_COLUMNS[len(row)]
@@ -1641,6 +1692,7 @@ class SortableTable:
                     return
             except Exception:
                 pass
+        # 저장 파일이 없거나 로드 실패 시 빈 테이블로 시작
         self._set_data([])
         self.status_label.configure(text="데이터를 불러오세요 (카페 JSON 또는 행 추가)")
 
